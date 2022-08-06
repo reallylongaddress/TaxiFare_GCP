@@ -1,10 +1,11 @@
 import joblib
 from termcolor import colored
 import mlflow
+
+from TaxiFare_GCP import gcp_params
 from TaxiFare_GCP.data import get_data, clean_data
 from TaxiFare_GCP.encoders import TimeFeaturesEncoder, DistanceTransformer
 from TaxiFare_GCP.utils import compute_rmse
-from TaxiFare_GCP import gcm_params
 
 from memoized_property import memoized_property
 from mlflow.tracking import MlflowClient
@@ -18,7 +19,7 @@ from google.cloud import storage
 
 MLFLOW_URI = "https://mlflow.lewagon.ai/"
 EXPERIMENT_NAME = "[REMOTE] [reallylongaddress] TaxiFareModel_GCP + 0.0.9"
-
+#GCP_MODEL_NAME='gcp_model_2.joblib'
 
 class Trainer(object):
     def __init__(self, X, y):
@@ -84,20 +85,20 @@ class Trainer(object):
 
         # saving the trained model to disk is mandatory to then beeing able to upload it to storage
         # Implement here
-        joblib.dump(reg, 'model.joblib')
-        print("saved model.joblib locally")
+        joblib.dump(reg, gcp_params.MODEL_NAME)
+        print(f"saved {gcp_params.MODEL_NAME} locally")
 
         # Implement here
         self.upload_model_to_gcp()
-        print(f"uploaded model.joblib to gcp cloud storage under \n => {gcm_params.STORAGE_LOCATION}")
+        print(f"uploaded {gcp_params.MODEL_NAME} to gcp cloud storage under \n => {gcp_params.STORAGE_LOCATION}/{gcp_params.MODEL_NAME}")
 
     def upload_model_to_gcp(self):
 
         client = storage.Client()
-        bucket = client.bucket(gcm_params.BUCKET_NAME)
-        blob = bucket.blob(gcm_params.STORAGE_LOCATION)
+        bucket = client.bucket(gcp_params.BUCKET_NAME)
+        blob = bucket.blob(f'{gcp_params.STORAGE_LOCATION}{gcp_params.MODEL_NAME}')
 
-        blob.upload_from_filename('model.joblib')
+        blob.upload_from_filename(gcp_params.MODEL_NAME)
 
     # MLFlow methods
     @memoized_property
@@ -131,7 +132,7 @@ class Trainer(object):
 
 if __name__ == "__main__":
     # Get and clean data
-    N = 10000
+    N = 1000
     df = get_data(nrows=N)
     df = clean_data(df)
     y = df["fare_amount"]
