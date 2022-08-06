@@ -1,7 +1,22 @@
 import pandas as pd
+import scipy
 from sklearn.base import BaseEstimator, TransformerMixin
-from TaxiFare_GCP.utils import haversine_vectorized
 
+from TaxiFare_GCP.utils import haversine_vectorized
+from TaxiFare_GCP.data import optimize_numierics
+
+class NumericOptimizer(BaseEstimator, TransformerMixin):
+    def __init__(self):
+        pass
+
+    def fit(self, X, y=None):
+        return self
+
+    def transform(self, X, y=None):
+        X_ = X.copy()
+        X_optimized = optimize_numierics(pd.DataFrame(X_.todense()))
+        X_optimized = scipy.sparse.csr_matrix(X_optimized.values)
+        return X_optimized
 
 class TimeFeaturesEncoder(BaseEstimator, TransformerMixin):
     """
