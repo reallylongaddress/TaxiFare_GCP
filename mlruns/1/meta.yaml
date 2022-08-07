@@ -1,0 +1,4 @@
+artifact_location: file:///Users/dbd/Code/reallylongaddress/TaxiFare_GCP/mlruns/1
+experiment_id: '1'
+lifecycle_stage: active
+name: '[REMOTE] [reallylongaddress] TaxiFareModel_GCP + 0.0.9'
