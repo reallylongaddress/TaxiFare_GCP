@@ -1,7 +1,11 @@
+from msilib.schema import _Validation_records
+from sqlite3.dbapi2 import _Parameters
+from this import d
 import pandas as pd
 import joblib
 from termcolor import colored
 import mlflow
+import time
 
 from TaxiFare_GCP import gcp_params
 from TaxiFare_GCP.data import get_data, clean_data, get_test_data
@@ -89,17 +93,7 @@ class Trainer(object):
     def predict(self, X_test):
         return self.pipeline.predict(X_test)
 
-    # def save_model(self):
-    #     """Save the model into a .joblib format"""
-    #     joblib.dump(self.pipeline, 'model.joblib')
-    #     print(colored("model.joblib saved locally", "green"))
-
     def save_model(self, reg):
-        """method that saves the model into a .joblib file and uploads it on Google Storage /models folder
-        HINTS : use joblib library and google-cloud-storage"""
-
-        # saving the trained model to disk is mandatory to then beeing able to upload it to storage
-        # Implement here
         joblib.dump(reg, gcp_params.MODEL_NAME)
         print(f"saved {gcp_params.MODEL_NAME} locally")
 
@@ -152,8 +146,22 @@ class Trainer(object):
         self.mlflow_client.log_metric(self.mlflow_run.info.run_id, key, value)
 
 if __name__ == "__main__":
+
+    starttime = int(round(time.time() * 1000))
+
+    # put date time stamp here to do long running trainings and cross _Validation_records
+    # while saving the models (with same timestamp) log metrics of runs/CVs and save
+    # the models and metrics that created them
+
+    # build cloud based grid search over different models with
+    # different _Parameters
+
+    #standardize/normalize input data
+
+    #try different estimators/models
+
     # Get and clean data
-    N = 10_000
+    N = 100_000
     df = get_data(nrows=N)
 
     df = clean_data(df)
@@ -163,6 +171,7 @@ if __name__ == "__main__":
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3)
     # Train and save model, locally and
 
+    #BEGIN estimators LOOP
     print(f'Xtrain/y SHAPE: {X_train.shape}/{y_train.shape}')
     trainer = Trainer(X=X_train, y=y_train)
     trainer.set_experiment_name(EXPERIMENT_NAME)
@@ -178,3 +187,6 @@ if __name__ == "__main__":
     # print(y_pred_list)
     trainer.save_submission(y_pred)
     trainer.save_model(trainer.pipeline)
+    #END estimators  LOOP
+
+    }
