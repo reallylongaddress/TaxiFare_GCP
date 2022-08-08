@@ -41,7 +41,7 @@ def get_model(source='local'):
         client = storage.Client()
         bucket = client.bucket(gcp_params.BUCKET_NAME)
         print(f'get_model GCP: {bucket}')
-        blob = bucket.blob(f'{gcp_params.STORAGE_LOCATION}{gcp_params.MODEL_NAME}')
+        blob = bucket.blob(f'{gcp_params.MODEL_STORAGE_LOCATION}{gcp_params.MODEL_NAME}')
         print(f'downloading LOCAL_GCP_MODEL_PATH: {blob}')
 
         blob.download_to_filename(LOCAL_GCP_MODEL_PATH)

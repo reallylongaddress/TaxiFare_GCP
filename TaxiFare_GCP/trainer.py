@@ -7,6 +7,12 @@ from termcolor import colored
 import mlflow
 import time
 
+import sys
+import os
+import platform
+
+import io
+
 import TaxiFare_GCP.data
 from TaxiFare_GCP import gcp_params, utils
 # from TaxiFare_GCP.data import get_preprocessing_pipeline, get_raw_data
@@ -24,7 +30,7 @@ from sklearn.model_selection import train_test_split
 from google.cloud import storage
 
 MLFLOW_URI = "https://mlflow.lewagon.ai/"
-EXPERIMENT_NAME = "[REMOTE] [reallylongaddress] TaxiFareModel_GCP + 0.0.10"
+EXPERIMENT_NAME = "[REMOTE] [reallylongaddress] TaxiFareModel_GCP + 0.0.11"
 #GCP_MODEL_NAME='gcp_model_2.joblib'
 BEST_MODEL = None
 
@@ -56,38 +62,55 @@ class Trainer(object):
 
     def run(self):
 
-        starttime = int(round(time.time() * 1000))
+
+        process_start_time = int(round(time.time(), 0))
 
         # print('Trainer.run')
         self.data_pipeline = TaxiFare_GCP.data.get_preprocessing_pipeline()
         # print(f'type: {type(self.data_pipeline)}')
         df_train_val = TaxiFare_GCP.data.train_val_get_raw_data(self.params.get('nrows'))
+        # print(f'A>>>>df_train_val>>{df_train_val.isna().sum().sum()}<<')
+        # print(f'df_train_val.shape: {df_train_val.shape}')
+
+        df_train_val.dropna(how='any', axis=0, inplace=True)
+        # print(f'B>>>>df_train_val>>{df_train_val.isna().sum().sum()}<<')
+        # print(f'df_train_val.shape: {df_train_val.shape}')
 
         X_train_val = df_train_val.drop(columns=['fare_amount'])
         y_train_val = df_train_val['fare_amount']
 
         X_train, X_validate, y_train, y_validate = train_test_split(X_train_val, y_train_val, test_size=0.20)
+        # print(f'>>>>X_train>>{X_train.isna().sum().sum()}<<')
 
         self.data_pipeline.fit(X_train)
 
         X_train_preprocessed = self.data_pipeline.transform(X_train)
+        # print(f'>>>>X_train_preprocessed>>{pd.DataFrame.sparse.from_spmatrix(X_train_preprocessed).isna().sum().sum()}<<')
+
         X_val_preprocessed = self.data_pipeline.transform(X_validate)
 
-        X_test_preprocessed = self.data_pipeline.transform(TaxiFare_GCP.data.test_get_raw_data())
+        X_test = TaxiFare_GCP.data.test_get_raw_data()
+        X_test_preprocessed = self.data_pipeline.transform(X_test)
+        # print(f'>>>>X_test_preprocessed>>{pd.DataFrame.sparse.from_spmatrix(X_test_preprocessed).isna().sum().sum()}<<')
 
-        for estimator, hyperparams in self.params.get('estimators').items():
-            print(f'key: {estimator}')
+        for estimator_name, hyperparams in self.params.get('estimators').items():
+
+            loop_start_time = round(time.time(), 0)
+            print(f'key: {estimator_name}')
 
             ml_flow_client = MlflowClient()
             ml_flow_run = ml_flow_client.create_run(self.mlflow_experiment_id)
 
-            print(f'mlflow_log_param: start_time:{starttime}')
-            ml_flow_client.log_param(ml_flow_run.info.run_id, 'starttime', f'{starttime}')
-            ml_flow_client.log_param(ml_flow_run.info.run_id, 'model', estimator)
+            print(f'mlflow_log_param: start_time:{process_start_time}')
+            ml_flow_client.log_param(ml_flow_run.info.run_id, 'starttime', f'{process_start_time}')
+            ml_flow_client.log_param(ml_flow_run.info.run_id, 'model', estimator_name)
             ml_flow_client.log_param(ml_flow_run.info.run_id, 'train_size', f'{X_train_preprocessed.shape[0]}')
             ml_flow_client.log_param(ml_flow_run.info.run_id, 'validate_size', f'{X_val_preprocessed.shape[0]}')
             ml_flow_client.log_param(ml_flow_run.info.run_id, 'test_size', f'{X_test_preprocessed.shape[0]}')
 
+            ml_flow_client.log_param(ml_flow_run.info.run_id, 'os.name', os.name)
+            ml_flow_client.log_param(ml_flow_run.info.run_id, 'platform.system', platform.system())
+            ml_flow_client.log_param(ml_flow_run.info.run_id, 'platform.release', platform.release())
 
             #dbd todo - this is ugly, reduce to 1 line
             for param_key, param_value in hyperparams.items():
@@ -96,18 +119,18 @@ class Trainer(object):
 
             grid = None
             model = None
-            if estimator == 'knn':
+            if estimator_name == 'knn':
                 model = KNeighborsRegressor()
 
-            elif estimator == 'sgd':
+            elif estimator_name == 'sgd':
                 model = SGDRegressor()
 
-            elif estimator == 'linear':
+            elif estimator_name == 'linear':
                 model = LinearRegression()
             else:
                 raise Exception("Unknown model type")
 
-            print(f'===={estimator}: {len(hyperparams)}')
+            print(f'===={estimator_name}: {len(hyperparams)}')
             print(f'type: {type(hyperparams)}')
             print(f'----{hyperparams.get("hyperparams")}')
             grid = GridSearchCV(model,
@@ -131,16 +154,20 @@ class Trainer(object):
 
             print(f'X_validate/y SHAPE: {X_validate.shape}/{y_validate.shape}')
             validate_rmse = self.evaluate(best_model, X_val_preprocessed, y_validate)
+            ml_flow_client.log_metric(ml_flow_run.info.run_id, 'validate_rmse', f'{validate_rmse}')
             print(f"validate_rmse: {validate_rmse}")
 
             # df_test = get_test_data()
             y_pred = best_model.predict(X_test_preprocessed)
             print(f'y_pred: {y_pred}')
+            print(f'X_test: {X_test.columns}')
             # print(y_pred_list)
-            trainer.save_submission(y_pred)
-            trainer.save_model(trainer.pipeline)
+            self.save_submission(y_pred, X_test["key"], estimator_name, process_start_time)
+            self.save_model(best_model, estimator_name, process_start_time)
 
-
+            loop_end_time = time.time()
+            loop_elapsed_time = round((loop_end_time - loop_start_time), 1)
+            ml_flow_client.log_metric(ml_flow_run.info.run_id, 'elapsed_time', f'{loop_elapsed_time}')
 
     def evaluate(self, model, X_test, y_test):
         """evaluates the pipeline on df_test and return the RMSE"""
@@ -148,33 +175,59 @@ class Trainer(object):
         rmse = utils.compute_rmse(y_pred, y_test)
         return round(rmse, 2)
 
-    # def predict(self, X_test):
-    #     return self.data_pipeline.predict(X_test)
-dbd todo
-    def save_model(self, reg):
-        joblib.dump(reg, gcp_params.MODEL_NAME)
-        print(f"saved {gcp_params.MODEL_NAME} locally")
+    def save_model(self, model, estimator_name, process_start_time):
+        file_name = f'gcp_model_{estimator_name}_{process_start_time}.joblib'
+        local_file_path = gcp_params.LOCAL_STORAGE_LOCATION + file_name
+        print(f'model local_file_path: {local_file_path}')
 
-        # # Implement here
-        self.upload_model_to_gcp()
-        print(f"uploaded {gcp_params.MODEL_NAME} to gcp cloud storage under \n => {gcp_params.STORAGE_LOCATION}/{gcp_params.MODEL_NAME}")
-        pass
-dbd todo
-    def upload_model_to_gcp(self):
+        joblib.dump(model, local_file_path)
 
         client = storage.Client()
         bucket = client.bucket(gcp_params.BUCKET_NAME)
-        blob = bucket.blob(f'{gcp_params.STORAGE_LOCATION}{gcp_params.MODEL_NAME}')
+        blob = bucket.blob(gcp_params.GCM_STORAGE_LOCATION + file_name)
 
-        blob.upload_from_filename(gcp_params.MODEL_NAME)
-        pass
+        blob.upload_from_filename(gcp_params.LOCAL_STORAGE_LOCATION + file_name)
+        print(f"uploaded {gcp_params.LOCAL_STORAGE_LOCATION}{file_name} => {gcp_params.GCM_STORAGE_LOCATION}/{file_name}")
 
-    def save_submission(self, y_pred, estimator='KNN'):
+        # self.upload_model_to_gcp(file_name)
 
-        # y_pred = pd.concat([df_test["key"],pd.Series(y_pred)],axis=1)
-        # y_pred.columns = ['key', 'fare_amount']
-        # pd.DataFrame(y_pred).to_csv(f'./submission_{estimator}.csv', index=False)
-        pass
+    # def upload_model_to_gcp(self, file_name):
+
+    #     client = storage.Client()
+    #     bucket = client.bucket(gcp_params.BUCKET_NAME)
+    #     blob = bucket.blob(gcp_params.MODEL_STORAGE_LOCATION + file_name)
+
+    #     blob.upload_from_filename(gcp_params.SUBMISSION_STORAGE_LOCATION + file_name)
+    #     print(f"uploaded {gcp_params.SUBMISSION_STORAGE_LOCATION}{file_name} => {gcp_params.SUBMISSION_STORAGE_LOCATION}/{file_name}")
+
+    def save_submission(self, y_pred, y_keys, estimator_name, process_start_time):
+
+        client = storage.Client()
+        # bucket = client.bucket(gcp_params.BUCKET_NAME)
+
+        y_pred = pd.concat([y_keys, pd.Series(y_pred)],axis=1)
+        y_pred.columns = ['key', 'fare_amount']
+        file_name = f'submission_{estimator_name}_{process_start_time}.csv'
+        local_file_path = gcp_params.LOCAL_STORAGE_LOCATION + file_name
+        print(f'submission local_file_path: {local_file_path}')
+
+        #save locally
+        pd.DataFrame(y_pred).to_csv(local_file_path, index=False)
+
+        #save go GCP, no need for local file save even though one occurs above
+        f = io.StringIO()
+        y_pred.to_csv(f)
+        f.seek(0)
+        client.get_bucket(gcp_params.BUCKET_NAME).blob(gcp_params.GCM_STORAGE_LOCATION + file_name).upload_from_file(f, content_type='text/csv')
+
+
+        # client = storage.Client()
+        # bucket = client.bucket(gcp_params.BUCKET_NAME)
+        # blob = bucket.blob(gcp_params.MODEL_STORAGE_LOCATION + file_name)
+
+        # blob.upload_from_filename(gcp_params.SUBMISSION_STORAGE_LOCATION + file_name)
+        # print(f"uploaded {gcp_params.SUBMISSION_STORAGE_LOCATION}{file_name} => {gcp_params.SUBMISSION_STORAGE_LOCATION}/{file_name}")
+
 
     # MLFlow methods
     # @memoized_property
@@ -210,12 +263,16 @@ if __name__ == "__main__":
 
     # starttime = int(round(time.time() * 1000))
 
+
+    print(f'Number of arguments: {len(sys.argv)}')
+    print(f'Arguments: {sys.argv}')
+
     params = {
         'estimators': {
             'knn':{
                 'hyperparams':{
-                    'n_neighbors':[5,10,20],
-                    'n_jobs':[1,-1],
+                    'n_neighbors':[10,20,50],
+                    'n_jobs':[-1],
                 },
             },
             'linear':{
@@ -225,11 +282,12 @@ if __name__ == "__main__":
             },
             'sgd':{
                 'hyperparams':{
-                    'learning_rate': ['constant', 'optimal', 'invscaling'],
+                    'learning_rate': ['invscaling'],
                 }
             }
         },
-        'nrows':10000,
+        # 'nrows':1_000,
+        'nrows':200_000,
         # 'starttime':starttime,
         'experiment_name':EXPERIMENT_NAME
     }
@@ -304,11 +362,12 @@ xtransfrom test data
 LOOP estimators
 X    grid search train/val data
 
-    get best model
+X    get best model
 
+    store models
     evaluate test data on best model from GridSearch results
 
-
+Update/c
 
 from best/best model, submit prediction
 '''

@@ -64,6 +64,7 @@ REGION=us-central1
 PYTHON_VERSION=3.7
 FRAMEWORK=scikit-learn
 RUNTIME_VERSION=1.15
+#RUNTIME_VERSION=2.1
 
 PACKAGE_NAME=TaxiFare_GCP
 FILENAME=trainer
@@ -71,7 +72,7 @@ FILENAME=trainer
 JOB_NAME=taxi_fare_training_pipeline_$(shell date +'%Y%m%d_%H%M%S')
 
 run_locally:
-	@python -m ${PACKAGE_NAME}.${FILENAME}
+	@python -m ${PACKAGE_NAME}.${FILENAME} localhost
 
 gcp_submit_training:
 	gcloud ai-platform jobs submit training ${JOB_NAME} \
