@@ -14,7 +14,7 @@ import platform
 import io
 
 import TaxiFare_GCP.data
-from TaxiFare_GCP import gcp_params, utils
+from TaxiFare_GCP import gcp_params, utils, data
 # from TaxiFare_GCP.data import get_preprocessing_pipeline, get_raw_data
 #from TaxiFare_GCP.data import import get_raw_data, clean_data, get_test_data
 # from TaxiFare_GCP.utils import compute_rmse
@@ -65,32 +65,60 @@ class Trainer(object):
 
         process_start_time = int(round(time.time(), 0))
 
-        # print('Trainer.run')
-        self.data_pipeline = TaxiFare_GCP.data.get_preprocessing_pipeline()
-        # print(f'type: {type(self.data_pipeline)}')
         df_train_val = TaxiFare_GCP.data.train_val_get_raw_data(self.params.get('nrows'))
-        # print(f'A>>>>df_train_val>>{df_train_val.isna().sum().sum()}<<')
-        # print(f'df_train_val.shape: {df_train_val.shape}')
 
-        df_train_val.dropna(how='any', axis=0, inplace=True)
-        # print(f'B>>>>df_train_val>>{df_train_val.isna().sum().sum()}<<')
-        # print(f'df_train_val.shape: {df_train_val.shape}')
+# #load data
+# df_train, df_test = get_data(nrows=1_000)
+
+# # clean data
+        print(f'-----A: {df_train_val.isna().sum().sum()}')
+        print(df_train_val.shape)
+        df_train_val = data.clean_data(df_train_val)
+        print(f'-----B: {df_train_val.isna().sum().sum()}')
+        print(df_train_val.shape)
+        # df_train_val.dropna(how='any', axis=0, inplace=True)
+        # df_train_2 = do_scaler_pipe(df_train)
+# #dbd
+# #feature enginering
+# df_train = feature_engineering(df_train)
+        X_test = TaxiFare_GCP.data.test_get_raw_data()
+        X_test.to_csv('./X_test_1.csv')
+        # do_fe = False
+        # if do_fe:
+        #     df_train_val = data.feature_engineering(df_train_val)
+        #     print(f'-----C: {df_train_val.isna().sum().sum()}')
+        #     print(df_train_val.shape)
+
+        #     X_test = data.feature_engineering(X_test)
+
+
 
         X_train_val = df_train_val.drop(columns=['fare_amount'])
         y_train_val = df_train_val['fare_amount']
 
         X_train, X_validate, y_train, y_validate = train_test_split(X_train_val, y_train_val, test_size=0.20)
-        # print(f'>>>>X_train>>{X_train.isna().sum().sum()}<<')
 
+        print(f'X_train_val: {type(X_train_val)}')
+        print(f'-----D: {df_train_val.isna().sum().sum()}')
+        print(f'X_train: {type(X_train)}')
+        print(f'-----E: {X_train.isna().sum().sum()}')
+
+        self.data_pipeline = TaxiFare_GCP.data.get_preprocessing_pipeline()
         self.data_pipeline.fit(X_train)
 
         X_train_preprocessed = self.data_pipeline.transform(X_train)
-        # print(f'>>>>X_train_preprocessed>>{pd.DataFrame.sparse.from_spmatrix(X_train_preprocessed).isna().sum().sum()}<<')
-
         X_val_preprocessed = self.data_pipeline.transform(X_validate)
 
-        X_test = TaxiFare_GCP.data.test_get_raw_data()
+
         X_test_preprocessed = self.data_pipeline.transform(X_test)
+        print(f'X_train_preprocessed: {type(X_train_preprocessed)}')
+        print(f'X_val_preprocessed: {type(X_val_preprocessed)}')
+        print(f'X_test_preprocessed: {type(X_test_preprocessed)}')
+
+        print(f'X_train_preprocessed: {pd.DataFrame(X_train_preprocessed).isna().sum().sum()}')
+        print(f'X_val_preprocessed: {pd.DataFrame(X_val_preprocessed).isna().sum().sum()}')
+        print(f'X_test_preprocessed: {pd.DataFrame(X_test_preprocessed).isna().sum().sum()}')
+
         # print(f'>>>>X_test_preprocessed>>{pd.DataFrame.sparse.from_spmatrix(X_test_preprocessed).isna().sum().sum()}<<')
 
         for estimator_name, hyperparams in self.params.get('estimators').items():
@@ -286,8 +314,8 @@ if __name__ == "__main__":
                 }
             }
         },
-        # 'nrows':1_000,
-        'nrows':200_000,
+        'nrows':1_000,
+        # 'nrows':200_000,
         # 'starttime':starttime,
         'experiment_name':EXPERIMENT_NAME
     }
